@@ -78,18 +78,12 @@
 	/*
 	 *  Find visible items
 	 */
-	var ids = [];
-	var items = $('.item > .selected'); // use the selected items
-  	if (items.length == 0) { // if there are no selected items ...
-		items = $('.item'); // ... then use all items
-	}
-	items.each(function() {
-		var id = this.id || "";
-		var matches = id.match(/_(story|epic)([0-9]+)/);
-		if (matches) {
-			ids.push(matches[1] + ":" + matches[2]);
-		}
-	});
+
+        var ids = $('.ghx-selected').map(function(){
+            return $(this).data('issue-key');
+        });
+
+        ids = _.uniq(ids);
 
 	/*
 	 *  build cards
@@ -98,111 +92,140 @@
 	var fronts = [];
 	var backs = [];
 
-	 ids = _.uniq(ids);
+        var issues = []
+        var deferreds = _.map(ids, function(id) {
+            return $.ajax('https://jira.guprod.gnl/rest/api/latest/issue/' + id).then(function(iss) {
+                issues.push(iss)
+            });
+        });
 
-	 _.each(ids, function (id) {
-		var matches = id.split(":");
+
+        function render() {
+            console.log("OK", issues);
+
+	    _.each(issues, function (story) {
 		var item;
 		var card;
 
-		var story = (matches[0] === "epic")
-			? app.project.getEpicById(matches[1])
-			: app.project.getStoryById(matches[1]);
-
 		if (story) {
-			var labels = [];
-			var epic_name = "";
+		    var labels = [];
+		    var epic_name = "";
 
-			_.each(story.getLabels(), function(label) {
-				if (app.project.getEpicByLabel(label)) {
-					epic_name = label;
-				} else {
-					labels.push(label);
-				}
-			});
+		    _.each(story.fields.labels, function(label) {
+                        // TODO
+			// if (app.project.getEpicByLabel(label)) {
+			// 	epic_name = label;
+			// } else {
+			labels.push(label);
+			// }
+		    });
 
-			var points = story.getEstimate && story.getEstimate();
-			var name = story.getName() || "";
-			name = name.replace(/\band\b|&/g, '<span class="amp">&amp;</span>');
+		    var points = story.fields.customfield_10003;
+		    var name = story.fields.summary || "";
+		    name = name.replace(/\band\b|&/g, '<span class="amp">&amp;</span>');
 
-			item = {
-				cardno: cardno,
-				story_type: story._storyType ? story._storyType._name : matches[0],
-				id: matches[1],
-				name: name,
-				description: story._description || "",
-				epic_name: epic_name,
-				project_name: app.project.getName(),
-				labels: labels,
-				tasks: story.getTasks && story.getTasks(),
-				requester: story.getRequestedBy && story.getRequestedBy().displayName,
-				owner: story.getOwnedBy && story.getOwnedBy() && story.getOwnedBy().displayName,
-				points: points > 0 ? points : ""
-			};
+                    var tasks = _.map(story.fields.subtasks || [], function(task) {
+                        return {
+                            _complete: task.fields.status === 'Closed', // TODO: all statuses?
+                            _description: task.fields.summary
+                        };
+                    });
 
-			if (item.name.match(/\?\s*$/)) {
-				item.story_type = "spike";
-			}
 
-			/*
-			 *  make cards using templates
-			 */
-			card = make_front(item);
-			fronts.push($(card));
+		    item = {
+			cardno: cardno,
+			story_type: story.fields.issuetype.name.toLowerCase(),
+			id: story.key,
+			name: name,
+			description: story.fields.description || "",
+			// epic_name: epic_name, // TODO
+			epic_name: '',
+			project_name: story.fields.project.name,
+			labels: labels,
+			tasks: tasks,
+			// requester: story.fields.reporter.name,
+			requester: '', // TODO
+			owner: story.fields.reporter.name,
+			points: points > 0 ? points : ""
+		    };
 
-			card = make_back(item);
-			backs.push($(card));
+		    if (item.story_type === "chore" && item.name.match(/\?\s*$/)) {
+			item.story_type = "spike";
+		    }
 
-			cardno++;
+		    if (item.story_type === "story") {
+			item.story_type = "feature";
+		    }
+
+		    /*
+		     *  make cards using templates
+		     */
+		    card = make_front(item);
+		    fronts.push($(card));
+
+		    card = make_back(item);
+		    backs.push($(card));
+
+		    cardno++;
 		}
-	});
+                console.log("DONE ISSUE")
+	    });
 
-	/*
-	 *  layout cards 
-	 */
-	function double_sided() {
+	    /*
+	     *  layout cards 
+	     */
+	    function double_sided() {
 		var cardno;
 		var front_page;
 		var back_page;
 
 		for (cardno = 0; cardno < fronts.length; cardno++) {
-			if ((cardno % 4) === 0) {
-				front_page = $('<div class="page fronts"></div>');
-				main.append(front_page);
+		    if ((cardno % 4) === 0) {
+			front_page = $('<div class="page fronts"></div>');
+			main.append(front_page);
 
-				back_page = $('<div class="page backs"></div>');
-				main.append(back_page);
-			}
-			front_page.append(fronts[cardno]);
-			back_page.append(backs[cardno]);
+			back_page = $('<div class="page backs"></div>');
+			main.append(back_page);
+		    }
+		    front_page.append(fronts[cardno]);
+		    back_page.append(backs[cardno]);
 
-			/*
-			if (!(cardno % 2)) {
-			} else {
-				$(back_page).children().last().before(backs[cardno]);
-			}
-			*/
+		    /*
+		      if (!(cardno % 2)) {
+		      } else {
+		      $(back_page).children().last().before(backs[cardno]);
+		      }
+		    */
 		}
-	}
+	    }
 
-	function single_sided() {
+	    function single_sided() {
 		var cardno;
 		var page;
 
 		for (cardno = 0; cardno < fronts.length; cardno++) {
-			if ((cardno % 2) === 0) {
-				page = $('<div class="page"></div>');
-				main.append(page);
-			}
-			page.append(fronts[cardno]);
-			page.append(backs[cardno]);
+		    if ((cardno % 2) === 0) {
+			page = $('<div class="page"></div>');
+			main.append(page);
+		    }
+		    page.append(fronts[cardno]);
+		    page.append(backs[cardno]);
 		}
-	}
+	    }
 
-	if (options['double-sided']) {
+	    if (options['double-sided']) {
 		double_sided();
-	} else {
+	    } else {
 		single_sided();
-	}
+	    }
+        }
+
+        $.when(deferreds).then(function() {
+            // Stupidly, jQuery's implementation of Promise/A is
+            // flawed so this is triggered before the `then` of the
+            // individual deferreds, which means the issues list is
+            // not populated yet. Work around this by yielding here.
+            setTimeout(render, 1000);
+        });
 
 }(jQuery));
