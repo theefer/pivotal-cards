@@ -94,7 +94,7 @@
 
         var issues = []
         var deferreds = _.map(ids, function(id) {
-            return $.ajax('https://jira.guprod.gnl/rest/api/latest/issue/' + id).then(function(iss) {
+            return $.ajax('https://jira.gutools.co.uk/rest/api/latest/issue/' + id).then(function(iss) {
                 issues.push(iss)
             });
         });
